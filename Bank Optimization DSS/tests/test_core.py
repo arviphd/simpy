@@ -74,6 +74,18 @@ class OptimizerTests(unittest.TestCase):
         dss_path = Path(__file__).resolve().parents[1] / "dss.py"
         ast.parse(dss_path.read_text(encoding="utf-8"), filename=str(dss_path))
 
+    def test_dss_exposes_objective_weights(self):
+        dss_path = Path(__file__).resolve().parents[1] / "dss.py"
+        source = dss_path.read_text(encoding="utf-8")
+        for weight in (
+            "hourly_teller_cost",
+            "digital_cost_per_customer",
+            "waiting_cost_per_customer_minute",
+            "abandonment_cost",
+            "utilization_penalty_weight",
+        ):
+            self.assertIn(weight, source)
+
     def test_compliance_calculation_is_in_range(self):
         scenario = Scenario(horizon_minutes=120.0, required_replication_compliance=1.0)
         candidate = evaluate(Decision(3, 0.2), scenario, replications=4, base_seed=51)
