@@ -1,3 +1,7 @@
+"""Replay animation for the simple bank simulation."""
+
+from __future__ import annotations
+
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Circle, FancyBboxPatch, Rectangle
@@ -6,16 +10,36 @@ from matplotlib.widgets import Button, Slider
 from bank_sim import BankSimulation
 
 
-def animate(simulation, duration_seconds=16):
+def _value_at(times: list[float], values: list[float], current_time: float) -> float:
+    current_value = values[0]
+    for index, event_time in enumerate(times):
+        if event_time > current_time:
+            break
+        current_value = values[index]
+    return current_value
+
+
+def _move(start: tuple[float, float], end: tuple[float, float], progress: float) -> tuple[float, float]:
+    eased = progress * progress * (3.0 - 2.0 * progress)
+    return (
+        start[0] + (end[0] - start[0]) * eased,
+        start[1] + (end[1] - start[1]) * eased,
+    )
+
+
+def animate(simulation: BankSimulation, duration_seconds: float = 16) -> None:
+    if not simulation._queue_times:
+        raise ValueError("No timeline data. Call simulation.run() first.")
+
     frame_count = min(320, max(80, len(simulation._queue_times)))
     frame_times = [
         simulation.sim_time * frame / (frame_count - 1)
         for frame in range(frame_count)
     ]
 
-    figure, bank_axis = plt.subplots(figsize=(12, 7))
-    figure.subplots_adjust(bottom=0.14, top=0.9)
-    figure.patch.set_facecolor("#efe8d8")
+    fig, bank_axis = plt.subplots(figsize=(12, 7))
+    fig.subplots_adjust(bottom=0.14, top=0.9)
+    fig.patch.set_facecolor("#efe8d8")
     bank_axis.set(xlim=(0, 12), ylim=(0, 7), aspect="equal")
     bank_axis.set_facecolor("#f8f1df")
     bank_axis.axis("off")
@@ -32,7 +56,7 @@ def animate(simulation, duration_seconds=16):
     bank_axis.text(11.12, 3.18, "EXIT", rotation=90, ha="center", va="center",
                    fontsize=9, color="#70472f")
 
-    teller_positions = []
+    teller_positions: list[tuple[float, float]] = []
     teller_spacing = 8.0 / max(1, simulation.tellers)
     for teller in range(simulation.tellers):
         teller_x = 2.0 + teller_spacing * (teller + 0.5)
@@ -59,63 +83,43 @@ def animate(simulation, duration_seconds=16):
                    color="#75684f")
     bank_axis.plot([2.1, 9.35], [4.0, 4.0], color="#b18b45", linewidth=2)
 
-    customer_color = "#2878a5"
-    active_color = "#e59a2f"
+    queue_customer_color = "#2878a5"
+    teller_customer_color = "#e59a2f"
     queue_customers = [
-        Circle((-1, -1), 0.23, color=customer_color, ec="white", lw=1.2, zorder=5)
+        Circle((-1, -1), 0.23, color=queue_customer_color, ec="white", lw=1.2, zorder=5)
         for _ in range(max_queue)
     ]
     teller_customers = [
-        Circle((-1, -1), 0.23, color=active_color, ec="white", lw=1.2, zorder=5)
+        Circle((-1, -1), 0.23, color=teller_customer_color, ec="white", lw=1.2, zorder=5)
         for _ in range(simulation.tellers)
     ]
     for customer in queue_customers + teller_customers:
         bank_axis.add_patch(customer)
 
-    clock = bank_axis.text(6, 0.72, "", ha="center", fontsize=12,
-                           color="#26382c", weight="bold")
+    clock = bank_axis.text(6, 0.72, "", ha="center", fontsize=12, weight="bold", color="#26382c")
     status = bank_axis.text(6, 0.42, "", ha="center", fontsize=10,
                             color="#59655b")
 
-    def value_at(times, values, current_time):
-        current_value = values[0]
-        for index, event_time in enumerate(times):
-            if event_time > current_time:
-                break
-            current_value = values[index]
-        return current_value
-
-    def move(start, end, progress):
-        eased = progress * progress * (3.0 - 2.0 * progress)
-        return (
-            start[0] + (end[0] - start[0]) * eased,
-            start[1] + (end[1] - start[1]) * eased,
-        )
-
     playback = {"position": 0.0, "speed": 1.0}
+    paused = False
 
     def update(_frame):
+        nonlocal paused
         frame_index = min(int(playback["position"]), frame_count - 1)
         current_time = frame_times[frame_index]
         next_index = min(frame_index + 1, frame_count - 1)
         next_time = frame_times[next_index]
         progress = playback["position"] - int(playback["position"])
-        queue_count = value_at(
-            simulation._queue_times, simulation._queue_vals, current_time
-        )
-        busy_tellers = value_at(
-            simulation._service_times, simulation._service_vals, current_time
-        )
-        next_queue_count = value_at(
-            simulation._queue_times, simulation._queue_vals, next_time
-        )
-        next_busy_tellers = value_at(
-            simulation._service_times, simulation._service_vals, next_time
-        )
+
+        queue_count = int(_value_at(simulation._queue_times, simulation._queue_vals, current_time))
+        busy_tellers = int(_value_at(simulation._service_times, simulation._service_vals, current_time))
+        next_queue_count = int(_value_at(simulation._queue_times, simulation._queue_vals, next_time))
+        next_busy_tellers = int(_value_at(simulation._service_times, simulation._service_vals, next_time))
 
         entrance = (0.8, 3.18)
         exit_position = (11.2, 3.18)
         service_positions = [(x, y - 0.72) for x, y in teller_positions]
+
         leaving_queue = max(0, queue_count - next_queue_count)
         newly_busy = list(range(busy_tellers, next_busy_tellers))
         handoff_count = max(0, leaving_queue - len(newly_busy))
@@ -126,63 +130,68 @@ def animate(simulation, duration_seconds=16):
             customer.center = (-1, -1)
 
         if next_queue_count >= queue_count:
-            for index in range(queue_count):
+            for index in range(min(queue_count, len(queue_customers))):
                 queue_customers[index].center = queue_positions[index]
-            for index in range(queue_count, next_queue_count):
-                queue_customers[index].center = move(
-                    entrance, queue_positions[index], progress
-                )
+            for index in range(queue_count, min(next_queue_count, len(queue_customers))):
+                if index < len(queue_positions):
+                    queue_customers[index].center = _move(
+                        entrance, queue_positions[index], progress
+                    )
         else:
             leaving_count = queue_count - next_queue_count
-            for index in range(leaving_count):
+            for index in range(min(leaving_count, len(queue_customers))):
                 if index < len(destination_tellers):
                     target = service_positions[destination_tellers[index]]
-                    queue_customers[index].center = move(
+                    queue_customers[index].center = _move(
                         queue_positions[index], target, progress
                     )
-            for index in range(next_queue_count):
+            for index in range(min(next_queue_count, len(queue_customers) - leaving_count)):
                 customer_index = leaving_count + index
-                queue_customers[customer_index].center = move(
-                    queue_positions[customer_index], queue_positions[index], progress
-                )
+                if customer_index < len(queue_customers) and index < len(queue_positions):
+                    queue_customers[customer_index].center = _move(
+                        queue_positions[customer_index], queue_positions[index], progress
+                    )
 
         shared_busy = min(busy_tellers, next_busy_tellers)
         for index in range(shared_busy):
-            if index in handoff_tellers:
-                teller_customers[index].center = move(
+            if index < len(destination_tellers) and index in handoff_tellers:
+                teller_customers[index].center = _move(
                     service_positions[index], exit_position, progress
                 )
             else:
                 teller_customers[index].center = service_positions[index]
+
         if next_busy_tellers > busy_tellers:
-            for index in range(busy_tellers, next_busy_tellers):
-                if next_queue_count >= queue_count:
-                    teller_customers[index].center = move(
+            for index in range(busy_tellers, min(next_busy_tellers, len(teller_customers))):
+                if next_queue_count >= queue_count and index < len(queue_positions):
+                    teller_customers[index].center = _move(
                         entrance, service_positions[index], progress
                     )
         elif next_busy_tellers < busy_tellers:
-            for index in range(next_busy_tellers, busy_tellers):
-                teller_customers[index].center = move(
-                    service_positions[index], exit_position, progress
-                )
+            for index in range(next_busy_tellers, min(busy_tellers, len(teller_customers))):
+                if index < len(service_positions):
+                    teller_customers[index].center = _move(
+                        service_positions[index], exit_position, progress
+                    )
 
-        clock.set_text(
-            f"Minute {current_time:5.1f} of {simulation.sim_time:.0f}"
-        )
+        clock.set_text(f"Minute {current_time:5.1f} of {simulation.sim_time:.0f}")
         status.set_text(
             f"Waiting: {queue_count}     |     Tellers busy: "
             f"{busy_tellers}/{simulation.tellers}     |     "
             f"Speed: {playback['speed']:.2f}x"
         )
+
         if playback["position"] >= frame_count - 1:
-            animation.event_source.stop()
-        else:
-            playback["position"] += playback["speed"]
+            if not paused:
+                animation.event_source.stop()
+            return (*queue_customers, *teller_customers, clock, status)
+
+        playback["position"] += playback["speed"]
         return (*queue_customers, *teller_customers, clock, status)
 
     interval_ms = max(20, int(duration_seconds * 1000 / frame_count))
     animation = FuncAnimation(
-        figure,
+        fig,
         update,
         frames=None,
         interval=interval_ms,
@@ -191,19 +200,19 @@ def animate(simulation, duration_seconds=16):
         cache_frame_data=False,
     )
 
-    paused = False
     speed_slider = Slider(
-        figure.add_axes([0.25, 0.085, 0.5, 0.03]),
+        fig.add_axes([0.25, 0.085, 0.5, 0.03]),
         "Speed",
         0.05,
         4.0,
-        valinit=0.25,
+        valinit=1.0,
         valstep=0.05,
         valfmt="%1.2fx",
     )
     playback["speed"] = speed_slider.val
-    pause_button = Button(figure.add_axes([0.39, 0.025, 0.1, 0.05]), "Pause")
-    restart_button = Button(figure.add_axes([0.52, 0.025, 0.1, 0.05]), "Restart")
+
+    pause_button = Button(fig.add_axes([0.39, 0.025, 0.1, 0.05]), "Pause")
+    restart_button = Button(fig.add_axes([0.52, 0.025, 0.1, 0.05]), "Restart")
 
     def change_speed(speed):
         playback["speed"] = speed
@@ -228,11 +237,12 @@ def animate(simulation, duration_seconds=16):
     pause_button.on_clicked(toggle_pause)
     restart_button.on_clicked(restart)
     speed_slider.on_changed(change_speed)
+
     plt.show()
 
 
 if __name__ == "__main__":
-    bank = BankSimulation(
+    simulation = BankSimulation(
         simulation_time=480.0,
         mean_interarrival=3.0,
         mean_service=4.0,
@@ -240,5 +250,5 @@ if __name__ == "__main__":
         seed=7,
         verbose=False,
     )
-    bank.run(make_plots=False)
-    animate(bank)
+    simulation.run(make_plots=False, show_plot=False)
+    animate(simulation)
