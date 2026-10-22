@@ -80,9 +80,11 @@ class BankSimulation:
     def _customer(self, cid: int):
         arrival = self.env.now
         self._log(f"{self.env.now:6.2f}: customer {cid} arrived")
-        self._record(self.env.now, len(self.counter.queue), len(self.counter.users))
 
         with self.counter.request() as request:
+            # Record after the request is made, so a customer who has to wait
+            # is already counted in the queue.
+            self._record(self.env.now, len(self.counter.queue), len(self.counter.users))
             yield request
             wait = self.env.now - arrival
             self.wait_times.append(wait)
@@ -101,7 +103,9 @@ class BankSimulation:
             self.system_times.append(self.env.now - arrival)
             self.customers_completed += 1
 
-            self._record(self.env.now, len(self.counter.queue), len(self.counter.users))
+        # Record after the teller is released, so the departing customer is no
+        # longer counted as in service.
+        self._record(self.env.now, len(self.counter.queue), len(self.counter.users))
 
     def _arrivals(self):
         cid = 1
