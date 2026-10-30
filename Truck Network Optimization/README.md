@@ -60,6 +60,7 @@ search move brings it to the optimum of 4.
   two-level screen-then-simulate search.
 - `timeline.py`: saves `hub_timeline.png`, a side-by-side hub timeline (waiting and
   unloading per truck) for the quick-estimate schedule and the search result.
+- `dss.py`: Streamlit app to change the scenario and analyze the searches.
 - `tests/test_core.py`: regression tests for the model and the search results.
 
 ## Setup
@@ -79,6 +80,20 @@ python3 search.py --top-k 5       # simulate more moves per step in the two-leve
 python3 timeline.py               # saves hub_timeline.png
 python3 -m unittest discover -s tests
 ```
+
+## Open the app
+
+```bash
+python3 -m streamlit run dss.py
+```
+
+The sidebar sets the docks, unloading time, outbound departure, travel times, departure
+window and search settings; the shipment ready times are editable on the page. Results
+update as you change inputs. The tabs show the recommended schedule and its hub
+timeline, each search's progress and cost, how often the quick estimate disagrees with
+the simulation across all schedules, and a sandbox for simulating any schedule by hand.
+Comparing against every schedule is skipped above 60,000 schedules (for example, a
+15-minute departure step).
 
 ## Extending the example
 

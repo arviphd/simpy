@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from model import Scenario, clock, quick_estimate, simulate  # noqa: E402
-from search import all_schedules, best_by, local_search, two_level_search  # noqa: E402
+from search import all_schedules, best_by, best_by_quick_estimate, local_search, two_level_search  # noqa: E402
 
 
 class ModelTests(unittest.TestCase):
@@ -48,6 +48,39 @@ class SearchTests(unittest.TestCase):
         result = two_level_search(self.plan, self.scenario, top_k=3)
         self.assertEqual(result.late, 5)
         self.assertEqual(result.simulations, 10)
+
+    def test_quick_estimate_plan_without_enumeration_matches_best_by(self):
+        for scenario in (Scenario(), Scenario(docks=1, unload_minutes=60), Scenario(step_minutes=60)):
+            expected = best_by(lambda s: quick_estimate(s, scenario), all_schedules(scenario))
+            self.assertEqual(best_by_quick_estimate(scenario), expected)
+
+    def test_searches_stop_when_there_is_only_one_departure_slot(self):
+        scenario = Scenario(earliest_departure="10:00", latest_departure="10:00")
+        start = {origin: clock("10:00") for origin in scenario.origins}
+        self.assertEqual(local_search(start, scenario).schedule, start)
+        self.assertEqual(two_level_search(start, scenario).schedule, start)
+
+
+class AppTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            from streamlit.testing.v1 import AppTest
+        except ImportError:
+            self.skipTest("streamlit is not installed")
+        self.app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "dss.py"), default_timeout=120).run()
+
+    def test_app_runs_and_reports_default_results(self):
+        app = self.app
+        self.assertEqual(list(app.exception), [])
+        metrics = {metric.label: metric.value for metric in app.metric}
+        self.assertEqual(metrics["Local search"], "5 late")
+        self.assertEqual(metrics["Best possible"], "5 late")
+
+    def test_app_skips_the_full_check_when_there_are_too_many_schedules(self):
+        app = self.app
+        app.sidebar.select_slider[0].set_value(15).run()
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual({m.label: m.value for m in app.metric}["Best possible"], "not checked")
 
 
 if __name__ == "__main__":

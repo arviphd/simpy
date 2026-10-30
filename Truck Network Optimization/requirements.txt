@@ -1,2 +1,5 @@
 simpy>=4.1,<5
 matplotlib>=3.8,<4
+pandas>=2.2
+streamlit>=1.50,<2
+altair>=5,<7

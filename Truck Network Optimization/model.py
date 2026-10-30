@@ -60,6 +60,11 @@ class Scenario:
         return list(range(clock(self.earliest_departure), clock(self.latest_departure) + 1, self.step_minutes))
 
     @property
+    def schedule_count(self) -> int:
+        """Number of possible schedules: every truck picks one of the departure slots."""
+        return len(self.slots) ** len(self.origins)
+
+    @property
     def total_shipments(self) -> int:
         return sum(len(times) for times in self.ready.values())
 

@@ -50,6 +50,19 @@ def best_by(score: Callable[[Schedule], int], schedules: list[Schedule]) -> Sche
     return min(schedules, key=lambda s: (score(s), -sum(s.values())))
 
 
+def best_by_quick_estimate(scenario: Scenario) -> Schedule:
+    """Same plan as best_by(quick_estimate, all_schedules(scenario)), without enumerating.
+
+    The quick estimate ignores dock queues, so each truck's late count does not depend
+    on the others: the best plan is every truck's own best slot, with ties going to the
+    later departure.
+    """
+    plan = {origin: scenario.slots[0] for origin in scenario.origins}
+    for origin in scenario.origins:
+        plan[origin] = min(scenario.slots, key=lambda t: (quick_estimate({**plan, origin: t}, scenario), -t))
+    return plan
+
+
 def local_search(start: Schedule, scenario: Scenario) -> SearchResult:
     """Steepest-descent local search; every neighbor is simulated."""
     current, best = dict(start), late_shipments(start, scenario)
@@ -59,7 +72,7 @@ def local_search(start: Schedule, scenario: Scenario) -> SearchResult:
         for candidate in neighbors(current, scenario):
             scored.append((late_shipments(candidate, scenario), candidate))
             result.simulations += 1
-        value, candidate = min(scored, key=lambda item: item[0])
+        value, candidate = min(scored, key=lambda item: item[0], default=(best, current))
         if value >= best:
             break
         current, best = candidate, value
@@ -82,7 +95,7 @@ def two_level_search(start: Schedule, scenario: Scenario, top_k: int = 3) -> Sea
         for _, candidate in screened[:top_k]:
             scored.append((late_shipments(candidate, scenario), candidate))
             result.simulations += 1
-        value, candidate = min(scored, key=lambda item: item[0])
+        value, candidate = min(scored, key=lambda item: item[0], default=(best, current))
         if value >= best:
             break
         current, best = candidate, value
