@@ -7,3 +7,6 @@ venv/
 
 # Generated simulation and optimization artifacts
 Bank Optimization DSS/outputs/
+
+# Generated truck timeline plot
+Truck Network Optimization/hub_timeline.png
