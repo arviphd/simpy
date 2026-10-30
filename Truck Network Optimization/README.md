@@ -1,101 +1,90 @@
 # Truck Network Optimization: Simulation as the Objective Function
 
-A small, fully deterministic example of using simulation **only to evaluate the
-objective function** inside an optimization search. The optimizer (a neighborhood
-search) still decides; the simulation just scores each candidate, because the true
-objective is too tangled to write as a formula.
+This example chooses truck departure times for a small hub network with a
+neighborhood search. The search does the optimizing; a deterministic SimPy model
+only scores each candidate schedule, because the true objective depends on how
+trucks interact at the hub and is hard to write as a formula.
 
-It is a toy version of a real truck-network planner (HaulPLAN), small enough to
-build in class and to check by hand.
-
-## The problem
+## Decision problem
 
 - Four origins, **A, B, C, D**, each with one truck driving to a single **hub**.
   Travel time to the hub: A 60 min, B 90, C 120, D 150.
 - Each origin has 6 shipments with different ready times (24 in total). A truck takes
-  every shipment that is ready when it leaves. Shipments not ready yet wait for
-  tomorrow and count as **late**.
-- The hub has only **2 unloading docks**. Unloading a truck takes **45 minutes**.
-  A truck that arrives when both docks are busy waits.
+  every shipment that is ready when it leaves. Shipments not ready yet wait for the
+  next day and count as **late**.
+- The hub has **2 unloading docks**. Unloading a truck takes **45 minutes**. A truck
+  that arrives when both docks are busy waits.
 - One **outbound truck leaves the hub at 13:00**. Any shipment unloaded after that is
   **late**.
 
-**Decision:** the departure time of each truck, every 30 minutes from 06:00 to 11:00
-(11 options per truck, so 11^4 = 14,641 schedules).
+The optimizer chooses each truck's departure time, every 30 minutes from 06:00 to
+11:00 (11 options per truck, 14,641 schedules). The objective is the number of late
+shipments.
 
-**Objective:** minimize the number of late shipments.
-
-There is no randomness anywhere. Leaving later picks up more shipments, but if every
+The model has no randomness. Leaving later picks up more shipments, but if every
 truck leaves as late as it can, all four reach the hub together and two of them
-queue for a dock. That interaction is what a simple formula misses.
+queue for a dock.
 
-## Two ways to score a schedule
+## Two objective functions
 
 | | Quick estimate (`quick_estimate`) | Simulation (`simulate`) |
 |---|---|---|
-| Idea | A truck is on time if departure + travel + 45 min is before 13:00 | SimPy plays the day; the docks are a `simpy.Resource` with capacity 2 |
-| Sees dock queues? | No | Yes |
+| Rule | A truck is on time if departure + travel + unloading ends before 13:00 | SimPy plays the day; the docks are a `simpy.Resource` |
+| Dock queues | Ignored | Modeled |
 | Cost | Almost free | One full simulation |
 
-With unlimited docks the two always agree (there is a test for this). With 2 docks
-they can disagree badly.
+With unlimited docks the two always agree. With 2 docks they can disagree badly.
 
-## Results (default scenario)
+## Results for the default scenario
 
-```text
-python3 search.py
-```
-
-| | Quick estimate says | Simulation says |
+| Schedule | Quick estimate | Simulation |
 |---|---|---|
-| Best plan by the quick estimate (every truck leaves as late as it can; all arrive 12:00) | 4 late | **15 late** |
-| After local search with the simulation as the objective | 5 late | **5 late** |
+| Best by the quick estimate (all trucks reach the hub at 12:00) | 4 late | 15 late |
+| After local search scored by simulation | 5 late | 5 late |
 
-- The local search starts from the quick-estimate plan and moves one truck ±30 min at
-  a time: **15 → 9 → 5 late** in two moves, using **24 simulations**. Both moves send a
-  truck 30 minutes earlier with the same load, so it frees a dock before the others
-  arrive. The quick estimate sees no benefit in that, so it can never find it.
-- **5 late is the best of all 14,641 schedules** (checked by enumeration). The
-  remaining 5 shipments are late only because they are not ready in time.
-- **Two-level search** (screen every move with the quick estimate, simulate only the
-  best 3): same 5-late plan with **10 simulations** instead of 24.
+- Local search starts from the quick-estimate schedule and moves one truck 30 minutes
+  at a time: 15 → 9 → 5 late in two moves, using 24 simulations. Both moves send a
+  truck earlier with the same load, freeing a dock before the others arrive.
+- 5 late is the optimum over all 14,641 schedules (checked by enumeration). The
+  remaining shipments are late because they are not ready in time.
+- Two-level search (rank every move with the quick estimate, simulate only the best
+  3) reaches the same schedule with 10 simulations.
 
-Try a third dock with `python3 search.py --docks 3`: the quick-estimate plan improves
-to 10 late but still bunches at the hub, and one search move fixes it (4 late).
+With 3 docks (`--docks 3`) the quick-estimate schedule has 10 late shipments; one
+search move brings it to the optimum of 4.
 
 ## Project map
 
 - `model.py`: scenario data, the quick estimate, and the deterministic SimPy model.
-- `search.py`: enumeration, local search with the simulation as the objective, and
-  the two-level (screen-then-simulate) search. Prints the results above.
+- `search.py`: enumeration, local search with the simulation as the objective, and the
+  two-level screen-then-simulate search.
 - `timeline.py`: saves `hub_timeline.png`, a side-by-side hub timeline (waiting and
-  unloading per truck) for the quick-estimate plan and the search result.
-- `tests/test_core.py`: regression tests that pin the numbers used in class.
+  unloading per truck) for the quick-estimate schedule and the search result.
+- `tests/test_core.py`: regression tests for the model and the search results.
 
-## Setup and run
+## Setup
 
 From this directory:
 
 ```bash
 python3 -m pip install -r requirements.txt
-python3 search.py                 # results above
-python3 search.py --docks 3       # extension: a third dock
+```
+
+## Run
+
+```bash
+python3 search.py                 # results for the default scenario
+python3 search.py --docks 3       # a third dock
+python3 search.py --top-k 5       # simulate more moves per step in the two-level search
 python3 timeline.py               # saves hub_timeline.png
 python3 -m unittest discover -s tests
 ```
 
-## Ideas for students
+## Extending the example
 
-- Add a third dock, or make unloading depend on the number of shipments.
-- Replace steepest descent with first-improvement, or add tabu or random restarts
-  (start from every truck at 06:00 and see where plain local search gets stuck).
+- Make unloading time depend on the number of shipments, or add more docks.
+- Replace steepest descent with first-improvement, or add tabu search or random
+  restarts. Starting from every truck at 06:00 shows where plain local search stalls.
 - Add a second outbound truck with its own departure time and destinations.
-- Add randomness to travel times: now the problem becomes use 2 (optimize under
-  uncertainty), and each schedule needs several replications.
-
-## How it connects to the course
-
-- **Simulation sessions:** the third use of simulation. Use 1 stress-tests a plan
-  (here, the quick-estimate plan), use 2 optimizes under uncertainty (the bank DSS),
-  use 3 uses simulation only as the objective (this project).
-- **Heuristics sessions (7-10):** the same neighborhood search; only the score changes.
+- Add random travel times. Each schedule then needs several replications, and the
+  comparison should use common random numbers.

@@ -1,4 +1,4 @@
-"""Regression tests: the numbers used in the class slides must not drift."""
+"""Regression tests for the truck network model and search results."""
 
 from __future__ import annotations
 
