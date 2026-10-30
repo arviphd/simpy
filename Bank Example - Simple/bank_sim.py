@@ -39,7 +39,6 @@ class BankSimulation:
         self._service_times = [0.0]
         self._service_vals = [0]
 
-        self.total_service_busy = 0.0
         self.customers_completed = 0
         self.arrivals_count = 0
         self.timeline: list[tuple[float, int, int]] = []
@@ -82,6 +81,8 @@ class BankSimulation:
         self._log(f"{self.env.now:6.2f}: customer {cid} arrived")
 
         with self.counter.request() as request:
+            # Kept on the request so run() can find waits still open at close.
+            request.arrival = arrival
             # Record after the request is made, so a customer who has to wait
             # is already counted in the queue.
             self._record(self.env.now, len(self.counter.queue), len(self.counter.users))
@@ -96,7 +97,6 @@ class BankSimulation:
 
             service_time = self.rng.expovariate(1.0 / self.mean_service)
             self.service_times.append(service_time)
-            self.total_service_busy += service_time
             yield self.env.timeout(service_time)
 
             self._log(f"{self.env.now:6.2f}: customer {cid} completed")
@@ -125,7 +125,14 @@ class BankSimulation:
         self.env.process(self._arrivals())
         self.env.run(until=self.sim_time)
 
-        avg_wait = statistics.mean(self.wait_times) if self.wait_times else 0.0
+        # Customers still queued at close never reach service, so their waits
+        # are cut off at sim_time. Leaving them out would drop the longest waits
+        # when the bank is busy; including them makes the wait stats lower bounds.
+        all_waits = self.wait_times + [
+            self.sim_time - request.arrival for request in self.counter.queue
+        ]
+
+        avg_wait = statistics.mean(all_waits) if all_waits else 0.0
         avg_system = statistics.mean(self.system_times) if self.system_times else 0.0
         avg_queue = self._record_time_avg(self._queue_times, self._queue_vals, self.sim_time)
         avg_tellers_in_use = self._record_time_avg(
@@ -134,20 +141,20 @@ class BankSimulation:
             self.sim_time,
         )
 
-        utilization = (
-            self.total_service_busy / (self.tellers * self.sim_time)
-            if self.tellers and self.sim_time > 0
-            else 0.0
-        )
+        # The tellers-in-use timeline stops at sim_time, so service still in
+        # progress when the run ends is only counted up to that point.
+        utilization = avg_tellers_in_use / self.tellers if self.tellers else 0.0
 
         results = {
             "simulation_time": self.sim_time,
             "tellers": self.tellers,
             "customers_completed": self.customers_completed,
+            "in_service": len(self.counter.users),
+            "still_waiting": len(self.counter.queue),
             "arrivals": self.arrivals_count,
             "avg_wait": avg_wait,
             "avg_system": avg_system,
-            "p95_wait": self._pct(self.wait_times, 95),
+            "p95_wait": self._pct(all_waits, 95),
             "max_queue": max(self._queue_vals),
             "avg_queue": avg_queue,
             "avg_tellers_in_use": avg_tellers_in_use,
@@ -158,8 +165,10 @@ class BankSimulation:
         print(f"Simulation time:          {results['simulation_time']:.2f} min")
         print(f"Tellers:                  {results['tellers']}")
         print(f"Customers completed:      {results['customers_completed']}")
+        print(f"In service at close:      {results['in_service']}")
+        print(f"Still waiting at close:   {results['still_waiting']}")
         print(f"Arrivals:                 {results['arrivals']}")
-        print(f"Avg waiting time:         {results['avg_wait']:.2f} min")
+        print(f"Avg waiting time:         {results['avg_wait']:.2f} min (incl. still waiting)")
         print(f"Avg total system time:    {results['avg_system']:.2f} min")
         print(f"95th pct waiting time:    {results['p95_wait']:.2f} min")
         print(f"Max queue length:         {results['max_queue']}")
@@ -168,11 +177,11 @@ class BankSimulation:
         print(f"Teller utilization:       {results['utilization']:.2%}")
 
         if make_plots:
-            self._plot_results(results, output_plot=output_plot, show_plot=show_plot)
+            self._plot_results(results, all_waits, output_plot=output_plot, show_plot=show_plot)
 
         return results
 
-    def _plot_results(self, results, output_plot: str = "bank_sim_plot.png", show_plot: bool = True):
+    def _plot_results(self, results, waits: list[float], output_plot: str = "bank_sim_plot.png", show_plot: bool = True):
         fig, axes = plt.subplots(2, 2, figsize=(12, 8))
 
         axes[0, 0].plot(self._queue_times, self._queue_vals, drawstyle="steps-post")
@@ -188,8 +197,8 @@ class BankSimulation:
         axes[0, 1].set_ylim(0, max(1, self.tellers))
         axes[0, 1].grid(True, alpha=0.2)
 
-        if self.wait_times:
-            axes[1, 0].hist(self.wait_times, bins=20, alpha=0.7)
+        if waits:
+            axes[1, 0].hist(waits, bins=20, alpha=0.7)
             axes[1, 0].axvline(
                 results["avg_wait"],
                 color="tab:blue",
