@@ -42,6 +42,7 @@ class BankSimulation:
         self.customers_completed = 0
         self.arrivals_count = 0
         self.timeline: list[tuple[float, int, int]] = []
+        self.results: dict | None = None
 
     def _log(self, message: str) -> None:
         if self.verbose:
@@ -145,7 +146,7 @@ class BankSimulation:
         # progress when the run ends is only counted up to that point.
         utilization = avg_tellers_in_use / self.tellers if self.tellers else 0.0
 
-        results = {
+        results = self.results = {
             "simulation_time": self.sim_time,
             "tellers": self.tellers,
             "customers_completed": self.customers_completed,

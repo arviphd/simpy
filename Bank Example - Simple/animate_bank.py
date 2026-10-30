@@ -27,9 +27,25 @@ def _move(start: tuple[float, float], end: tuple[float, float], progress: float)
     )
 
 
+def _kpi_rows(results: dict) -> list[tuple[str, str]]:
+    return [
+        ("Customers served", f"{results['customers_completed']} of {results['arrivals']}"),
+        ("In service / still waiting at close",
+         f"{results['in_service']} / {results['still_waiting']}"),
+        ("Average wait (incl. still waiting)", f"{results['avg_wait']:.2f} min"),
+        ("95th percentile wait", f"{results['p95_wait']:.2f} min"),
+        ("Average time in bank (served)", f"{results['avg_system']:.2f} min"),
+        ("Average queue length", f"{results['avg_queue']:.2f}"),
+        ("Longest queue", f"{results['max_queue']}"),
+        ("Average tellers busy",
+         f"{results['avg_tellers_in_use']:.2f} of {results['tellers']}"),
+        ("Teller utilization", f"{results['utilization']:.1%}"),
+    ]
+
+
 def animate(simulation: BankSimulation, duration_seconds: float = 16) -> None:
-    if not simulation._queue_times:
-        raise ValueError("No timeline data. Call simulation.run() first.")
+    if simulation.results is None:
+        raise ValueError("No results yet. Call simulation.run() first.")
 
     frame_count = min(320, max(80, len(simulation._queue_times)))
     frame_times = [
@@ -99,6 +115,30 @@ def animate(simulation: BankSimulation, duration_seconds: float = 16) -> None:
     clock = bank_axis.text(6, 0.72, "", ha="center", fontsize=12, weight="bold", color="#26382c")
     status = bank_axis.text(6, 0.42, "", ha="center", fontsize=10,
                             color="#59655b")
+
+    # End-of-day KPI card, drawn above the customers and shown once the day ends.
+    kpi_artists = [
+        bank_axis.add_patch(FancyBboxPatch(
+            (2.15, 1.1), 7.7, 4.95,
+            boxstyle="round,pad=0.08,rounding_size=0.15",
+            facecolor="white", edgecolor="#26382c", linewidth=2, zorder=10,
+        )),
+        bank_axis.text(6, 5.68, "END OF DAY: KEY RESULTS", ha="center", va="center",
+                       fontsize=13, weight="bold", color="#26382c", zorder=11),
+    ]
+    for row, (label, value) in enumerate(_kpi_rows(simulation.results)):
+        y = 5.15 - row * 0.44
+        kpi_artists.append(bank_axis.text(2.6, y, label, ha="left", va="center",
+                                          fontsize=10.5, color="#59655b", zorder=11))
+        kpi_artists.append(bank_axis.text(9.4, y, value, ha="right", va="center",
+                                          fontsize=10.5, weight="bold", color="#26382c",
+                                          zorder=11))
+
+    def show_kpis(visible: bool) -> None:
+        for artist in kpi_artists:
+            artist.set_visible(visible)
+
+    show_kpis(False)
 
     playback = {"position": 0.0, "speed": 1.0}
     paused = False
@@ -181,7 +221,9 @@ def animate(simulation: BankSimulation, duration_seconds: float = 16) -> None:
             f"Speed: {playback['speed']:.2f}x"
         )
 
-        if playback["position"] >= frame_count - 1:
+        at_end = playback["position"] >= frame_count - 1
+        show_kpis(at_end)
+        if at_end:
             if not paused:
                 animation.event_source.stop()
             return (*queue_customers, *teller_customers, clock, status)
