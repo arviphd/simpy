@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from bisect import bisect_right
+
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Circle, FancyBboxPatch, Rectangle
@@ -9,14 +11,12 @@ from matplotlib.widgets import Button, Slider
 
 from bank_sim import BankSimulation
 
+TICK_MS = 50
+
 
 def _value_at(times: list[float], values: list[float], current_time: float) -> float:
-    current_value = values[0]
-    for index, event_time in enumerate(times):
-        if event_time > current_time:
-            break
-        current_value = values[index]
-    return current_value
+    # Times are recorded in simulation order, so they are already sorted.
+    return values[max(0, bisect_right(times, current_time) - 1)]
 
 
 def _move(start: tuple[float, float], end: tuple[float, float], progress: float) -> tuple[float, float]:
@@ -43,9 +43,12 @@ def _kpi_rows(results: dict) -> list[tuple[str, str]]:
     ]
 
 
-def animate(simulation: BankSimulation, duration_seconds: float = 16) -> None:
+def animate(simulation: BankSimulation, duration_seconds: float = 320) -> None:
+    """Replay the simulated day; ``duration_seconds`` is the replay length at 1x speed."""
     if simulation.results is None:
         raise ValueError("No results yet. Call simulation.run() first.")
+    if duration_seconds <= 0:
+        raise ValueError("duration_seconds must be positive.")
 
     frame_count = min(320, max(80, len(simulation._queue_times)))
     frame_times = [
@@ -54,6 +57,7 @@ def animate(simulation: BankSimulation, duration_seconds: float = 16) -> None:
     ]
 
     fig, bank_axis = plt.subplots(figsize=(12, 7))
+    fig.canvas.manager.set_window_title("Bank Simulation")
     fig.subplots_adjust(bottom=0.14, top=0.9)
     fig.patch.set_facecolor("#efe8d8")
     bank_axis.set(xlim=(0, 12), ylim=(0, 7), aspect="equal")
@@ -144,7 +148,6 @@ def animate(simulation: BankSimulation, duration_seconds: float = 16) -> None:
     paused = False
 
     def update(_frame):
-        nonlocal paused
         frame_index = min(int(playback["position"]), frame_count - 1)
         current_time = frame_times[frame_index]
         next_index = min(frame_index + 1, frame_count - 1)
@@ -224,19 +227,18 @@ def animate(simulation: BankSimulation, duration_seconds: float = 16) -> None:
         at_end = playback["position"] >= frame_count - 1
         show_kpis(at_end)
         if at_end:
-            if not paused:
-                animation.event_source.stop()
+            set_paused(True)
             return (*queue_customers, *teller_customers, clock, status)
 
-        playback["position"] += playback["speed"]
+        playback["position"] += playback["speed"] * frames_per_tick
         return (*queue_customers, *teller_customers, clock, status)
 
-    interval_ms = max(20, int(duration_seconds * 1000 / frame_count))
+    frames_per_tick = frame_count * TICK_MS / (duration_seconds * 1000)
     animation = FuncAnimation(
         fig,
         update,
         frames=None,
-        interval=interval_ms,
+        interval=TICK_MS,
         repeat=False,
         blit=False,
         cache_frame_data=False,
@@ -245,13 +247,12 @@ def animate(simulation: BankSimulation, duration_seconds: float = 16) -> None:
     speed_slider = Slider(
         fig.add_axes([0.25, 0.085, 0.5, 0.03]),
         "Speed",
-        0.05,
-        4.0,
-        valinit=1.0,
-        valstep=0.05,
+        0.01,
+        10.0,
+        valinit=playback["speed"],
+        valstep=0.01,
         valfmt="%1.2fx",
     )
-    playback["speed"] = speed_slider.val
 
     pause_button = Button(fig.add_axes([0.39, 0.025, 0.1, 0.05]), "Pause")
     restart_button = Button(fig.add_axes([0.52, 0.025, 0.1, 0.05]), "Restart")
@@ -259,22 +260,28 @@ def animate(simulation: BankSimulation, duration_seconds: float = 16) -> None:
     def change_speed(speed):
         playback["speed"] = speed
 
-    def toggle_pause(_event):
+    def set_paused(value: bool) -> None:
         nonlocal paused
-        paused = not paused
+        paused = value
         if paused:
-            animation.event_source.stop()
+            animation.pause()
             pause_button.label.set_text("Play")
         else:
-            animation.event_source.start()
+            animation.resume()
             pause_button.label.set_text("Pause")
 
+    def toggle_pause(_event):
+        # Play once the end-of-day card is showing replays the day from the start.
+        if paused and kpi_artists[0].get_visible():
+            restart(_event)
+        else:
+            set_paused(not paused)
+
     def restart(_event):
-        nonlocal paused
         playback["position"] = 0.0
-        animation.event_source.start()
-        paused = False
-        pause_button.label.set_text("Pause")
+        show_kpis(False)
+        set_paused(False)
+        fig.canvas.draw_idle()
 
     pause_button.on_clicked(toggle_pause)
     restart_button.on_clicked(restart)
