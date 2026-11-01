@@ -51,6 +51,7 @@ The formula is wrong in both directions:
 ## Project map
 
 - `roster.py`: the formula, the integer program, the SimPy model and the improvement loop.
+- `dss.py`: Streamlit app to change the inputs, rerun the loop and see the results.
 - `tests/test_core.py`: regression tests for the formula, the IP and the loop result.
 
 ## Setup
@@ -67,6 +68,18 @@ python3 -m pip install -r requirements.txt
 python3 roster.py
 python3 -m unittest discover -s tests
 ```
+
+## Open the app
+
+```bash
+python3 -m streamlit run dss.py
+```
+
+The sidebar sets the service time, the waiting target, the shift costs, the part-time
+shift length and how many days are simulated per roster; arrivals per hour are editable
+on the page. The tabs show the recommended roster with simulated and formula waits per
+hour, each round of the loop, the final roster replayed on new random days, and a
+sandbox for simulating any roster by hand.
 
 ## Extending the example
 

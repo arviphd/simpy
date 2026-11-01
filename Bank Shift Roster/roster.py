@@ -21,14 +21,28 @@ import sys
 import simpy
 from ortools.linear_solver import pywraplp
 
+# The functions below read these constants when they run, so dss.py can set them per scenario.
 HOURS = list(range(9, 17))
 ARRIVALS_PER_HOUR = [30, 40, 50, 90, 100, 50, 36, 30]     # lunch peak 12-14
 MEAN_SERVICE = 4.0                                          # minutes
 TARGET_WAIT = 1.0                                           # minutes, per hour
-SHIFTS = {"Full 9-17": (9, 17, 8.0)}                        # name -> (start, end, cost)
-for s in range(9, 14):
-    SHIFTS[f"Part {s}-{s + 4}"] = (s, s + 4, 5.0)           # part-time: dearer per hour, but flexible
+
+
+def make_shifts(full_cost: float = 8.0, part_cost: float = 5.0, part_hours: int = 4) -> dict:
+    """name -> (start, end, cost): full-time 9-17, and part-time shifts starting on every hour that fits."""
+    shifts = {"Full 9-17": (9, 17, full_cost)}
+    for s in range(9, 18 - part_hours):
+        shifts[f"Part {s}-{s + part_hours}"] = (s, s + part_hours, part_cost)   # dearer per hour, but flexible
+    return shifts
+
+
+SHIFTS = make_shifts()
 REPLICATIONS, BASE_SEED = 20, 2026
+MAX_PER_SHIFT = 20                                          # most tellers on any one shift
+
+
+class UnservedCustomers(RuntimeError):
+    """The simulated day ended with customers still in line: the roster is far too small."""
 
 
 # ---------- step 1: queueing formula ----------
@@ -56,7 +70,7 @@ def formula_requirements() -> list[int]:
 # ---------- step 2: integer program ----------
 def solve_roster(req: list[int]) -> tuple[dict[str, int], float]:
     solver = pywraplp.Solver.CreateSolver("CBC")
-    x = {name: solver.IntVar(0, 20, name) for name in SHIFTS}
+    x = {name: solver.IntVar(0, MAX_PER_SHIFT, name) for name in SHIFTS}
     for i, h in enumerate(HOURS):
         solver.Add(sum(x[n] for n, (a, b, _) in SHIFTS.items() if a <= h < b) >= req[i])
     solver.Minimize(sum(SHIFTS[n][2] * x[n] for n in SHIFTS))
@@ -114,7 +128,8 @@ def simulate_day(roster: dict[str, int], seed: int) -> list[list[float]]:
         for _ in range(k):
             env.process(teller(a, b))
     env.run(until=20 * 60)
-    assert not line.items, "customers left unserved"
+    if line.items:
+        raise UnservedCustomers(f"{len(line.items)} customers still waiting at 20:00")
     return waits
 
 
