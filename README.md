@@ -17,7 +17,7 @@ there are 2 tellers.
 - **Plan with averages:** each teller gets a customer every 6 minutes and is free after 4.
   Nobody waits.
 - **Simulate the randomness** (exponential gaps and service times, 20 simulated days using
-  seeds 1 to 20 of `bank_sim.py`; other seeds give slightly different figures): the
+  seeds 1 to 20 in `Bank Example - Simple/replicate.py`; other seeds give slightly different figures): the
   average wait is about **2.8 minutes**, 1 customer in 20 waits more than 11 minutes, and
   the line peaks near 8, even though the tellers are busy only 67% of the time.
 
@@ -38,20 +38,23 @@ In all three, optimization (or a search) proposes and simulation tests.
 
 | Folder | What it shows | Main tools |
 |---|---|---|
-| [`Bank Example - Simple`](Bank%20Example%20-%20Simple/) | One day at a branch with 2 tellers and one shared line. Reports average and 95th-percentile wait, line length and teller utilization, with an animated replay. | SimPy, Matplotlib |
+| [`Bank Example - Simple`](Bank%20Example%20-%20Simple/) | One day at a branch with 2 tellers and one shared line. Reports average and 95th-percentile wait, line length and teller utilization, with an animated replay and a script that replicates the day over many seeds. | SimPy, Matplotlib |
 | [`Bank Optimization DSS`](Bank%20Optimization%20DSS/) | Chooses the number of tellers and the share of customers served digitally. Scores every policy on 20 replicated days under service-level rules, then presents the result in a decision-support app and an animation. | SimPy, Streamlit, pandas |
 | [`Bank Shift Roster`](Bank%20Shift%20Roster/) | Builds the cheapest daily shift roster. An Erlang C formula and a covering integer program propose rosters, and SimPy checks each one hour by hour until no cheaper roster passes. | SimPy, OR-Tools, Streamlit |
 
 ## Suggested path
 
 1. **Build a simulation.** Run `Bank Example - Simple`. Before you run it, guess the
-   average wait with 2 tellers, then compare your guess with the result. Print the event
-   log for the first 10 customers and check two by hand. Try 3 tellers and other seeds.
-2. **Replicate and compare.** Run 20 seeds and report the average wait with a 95% interval
-   (mean ± t × s ÷ √n). On seeds 1 to 20 this gives 2.8 minutes (2.1 to 3.5) with 2 tellers
-   and 0.35 minutes (0.27 to 0.42) with 3, so the two intervals do not overlap.
-3. **Search over options.** Open the `Bank Optimization DSS` app. Tighten the walk-out limit
-   from 5% to 2%, or double the lunch-hour arrivals, and see whether the best policy changes.
+   average wait with 2 tellers, then compare your guess with the result. Read the event
+   log for the first 10 customers and check two by hand.
+2. **Replicate and compare.** Run `replicate.py` to play 20 days (seeds 1 to 20) and report
+   the average wait with a 95% interval (mean ± t × s ÷ √n). This gives 2.8 minutes (2.1 to
+   3.5) with 2 tellers and 0.35 minutes (0.27 to 0.42) with 3, so the two intervals do not
+   overlap. Try 50 tellers as an extreme test: the wait should vanish.
+3. **Search over options.** Run `optimize.py` in `Bank Optimization DSS`, then open its app.
+   Tighten the walk-out limit from 5% to 2%, or shorten the arrival gap from 3 to 2.5
+   minutes, and see whether the best policy changes. Compare 5 and 20 test runs: with few
+   runs, close policies can swap places.
 4. **Combine optimization and simulation.** Run `Bank Shift Roster`. See where the queueing
    formula is too cautious (the bank opens empty, the lunch rush is short) and where it is
    too optimistic (the lunch queue carries into the next hour).

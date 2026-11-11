@@ -23,6 +23,8 @@ and average line length, average tellers in use, and teller utilization.
   `bank_sim_plot.png`.
 - `animate_bank.py`: replays one simulated day as an animation with play, pause and speed
   controls.
+- `replicate.py`: runs many days (one seed per day) and reports the average wait with a
+  95% interval, the best and worst day, and teller utilization.
 
 ## Setup
 
@@ -37,7 +39,14 @@ python3 -m pip install -r requirements.txt
 ```bash
 python3 bank_sim.py        # one day with seed 7: event log, summary, plot
 python3 animate_bank.py    # animated replay of the same day
+python3 replicate.py       # 20 days (seeds 1-20) with 2 and with 3 tellers
 ```
+
+`replicate.py` accepts `--tellers` (one or more values), `--days` and `--first-seed`, for
+example `python3 replicate.py --tellers 2 3 4 --days 30`. With the defaults it reports an
+average wait of 2.82 minutes (95% interval 2.15 to 3.49) with 2 tellers and 0.35 minutes
+(0.27 to 0.42) with 3. One day can mislead: across those 20 days the 2-teller average
+ranges from about 1 to 6 minutes.
 
 ## Notes
 
@@ -49,6 +58,6 @@ python3 animate_bank.py    # animated replay of the same day
 
 ## Extending the example
 
-- Run 20 or more seeds and report the average wait with a 95% interval.
+- Extreme test: run `replicate.py --tellers 50`. The wait should vanish.
 - Add customers who walk out after waiting too long.
 - Let the arrival rate change by hour (a lunch rush).

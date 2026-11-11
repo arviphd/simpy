@@ -1,9 +1,9 @@
 # BranchFlow: SimPy Optimization, DSS, and Animation
 
-This example translates the optimization workflow from the AnyLogic guide into a
-small, inspectable Python project. It chooses a daily branch policy using repeated
-stochastic simulations and then exposes the result through a decision-support app
-and an animated replay.
+This example is a small, inspectable simulation-optimization project in Python. It
+chooses a daily branch policy by trying every candidate policy on repeated stochastic
+simulations, and then presents the result in a decision-support app and an animated
+replay.
 
 ## Decision problem
 
@@ -14,11 +14,12 @@ The optimizer chooses:
 
 The daily objective includes teller labor, digital transactions, customer waiting,
 abandonment, and a soft penalty when utilization is outside the preferred 65%-90%
-band. A large penalty is added unless at least 95% of replications satisfy each
-hard constraint:
+band. Each replication (one simulated day) is checked against two service rules, and
+a policy is feasible only if at least 95% of its replications pass each rule.
+Infeasible policies get a large penalty:
 
-- Mean replicated p95 wait must be no more than 10 minutes.
-- Mean replicated abandonment must be no more than 5%.
+- The day's 95th-percentile wait is no more than 10 minutes.
+- The day's abandonment rate is no more than 5%.
 
 Every policy is evaluated with the same sequence of random seeds. Independent
 decision-stable streams are used for arrivals, routing, and each customer's patience
@@ -51,8 +52,11 @@ instead if the machine hosts projects with incompatible dependency requirements.
 python3 optimize.py --replications 20 --seed 2026
 ```
 
-The command creates `outputs/optimization_results.csv` and
-`outputs/recommended_policy.json`. Start with 3-5 replications while changing the
+The command tries 6 teller levels × 5 digital shares (0%, 10%, ..., 40%) = 30
+policies, and creates `outputs/optimization_results.csv` and
+`outputs/recommended_policy.json`. With these settings, 20 of the 30 policies are
+feasible and the best is 3 tellers with 10% digital, at $859.29 a day. Two tellers
+fail the abandonment rule at every digital share. Start with 3-5 replications while changing the
 model, then use 20 or more for comparison and 30 or more for final sign-off.
 
 ## Open the DSS
@@ -67,6 +71,12 @@ and reports the best feasible policy. If no policy is feasible, it says so expli
 and displays the least-cost penalized alternative rather than presenting it as valid.
 Changing an input invalidates the displayed results until the optimization button is
 selected again.
+
+The app's defaults differ from `optimize.py`: it uses 15 test runs and steps the
+digital share by 5%, so it tries 54 policies. With those defaults it recommends 3
+tellers with 25% digital ($878.71 a day), not the 10% that `optimize.py` finds. To
+match the command-line result, set the test runs to 20. The difference is itself a
+lesson: with few replications, policies whose costs are close can swap places.
 
 ## Run an animation
 
